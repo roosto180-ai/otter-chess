@@ -1,9 +1,8 @@
 # Otter's Evaluation
 
 This document explains what Otter's evaluation number actually is, how it's computed,
-how it becomes the eval bar in [/play](docs/app/play/page.tsx) and
-[/olympiad/watch](docs/app/olympiad/watch/page.tsx), and how it differs from Stockfish's
-evaluation.
+how it becomes the eval bar in [/play](docs/app/play/page.tsx), and how it
+differs from Stockfish's evaluation.
 
 ## What it is
 
@@ -53,11 +52,10 @@ White. It's re-evaluated after every move.
 
 ## The formula used in the web app
 
-Both `/play` ([page.tsx](docs/app/play/page.tsx)) and `/olympiad/watch`
-([page.tsx](docs/app/olympiad/watch/page.tsx)) query the value head **twice** per
-position and combine the two readings, rather than trusting a single query:
+[/play](docs/app/play/page.tsx) queries the value head **twice** per position and
+combines the two readings, rather than trusting a single query:
 
-**1. Query the real mover.** `runModelInference`/`runOtterInference` call the model for
+**1. Query the real mover.** `runModelInference` calls the model for
 the position as it actually stands, and record the value together with whose turn it
 was computed for:
 
@@ -158,15 +156,14 @@ them. Recording `winProbabilityTurn`/`winProbabilityFen` alongside each value at
 exact moment it's set closes that gap, and the FEN match additionally guards the
 opposite-turn combine step against mixing readings from two different positions.
 
-### History: `/olympiad/watch`'s old two-bar design
+### History: the old two-bar design
 
-`/olympiad/watch` originally showed the two readings above as **two separate bars**
+An earlier live-board view showed the two readings above as **two separate bars**
 instead of combining them — one labeled "queried as White to move", one "queried as
 Black to move" — specifically to surface the two-framing disagreement rather than hide
-it. The current combined single bar (matching `/play`, and using the same
-subtract-and-average formula) folds both readings into one number instead. The
-`withOppositeTurn`-based two-bar rendering code is recoverable from git history if that
-disagreement ever needs to be surfaced on its own again.
+it. The current combined single bar on `/play` folds both readings into one number
+instead. The two-bar rendering is recoverable from git history if that disagreement
+ever needs to be surfaced on its own again.
 
 ## How this differs from Stockfish's evaluation
 

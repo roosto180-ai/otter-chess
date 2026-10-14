@@ -111,7 +111,6 @@ export const viewport = {
 };
 
 import Header from "../components/Header";
-import OlympiadTopBanner from "../components/OlympiadTopBanner";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -150,7 +149,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         <Header />
-        <OlympiadTopBanner />
         <main className="grow flex flex-col">{children}</main>
       </body>
     </html>

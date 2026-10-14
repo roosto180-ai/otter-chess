@@ -5,9 +5,8 @@ import { Chess } from 'chess.js';
 import type { PredictedMove } from './types';
 
 // Chessground arrow-brush colors, shared by every board that draws Otter/
-// Stockfish/played-move arrows (currently /play's Analyze mode and
-// /olympiad's main board) so there's one place to change them instead of
-// duplicated hex literals in each board's Chessground init and each
+// Stockfish/played-move arrows so there's one place to change them instead
+// of duplicated hex literals in each board's Chessground init and each
 // sidebar's arrow-colour legend.
 export const ARROW_BRUSH_COLORS = {
   otter: '#5C8A2E',
@@ -198,7 +197,7 @@ export const formatSfPoints = (raw: number | undefined): string => {
 // (their difference spans [-2, 2]) folds both into one number back in
 // [-1, 1]. This isn't just cosmetic: Otter's value head isn't perfectly
 // consistent between the two turn-framings of the same position (confirmed
-// against real finished games — see /olympiad's former two-bar display),
+// against real finished games),
 // so averaging the two readings cancels out some of that per-query noise
 // instead of trusting either single query alone.
 export const combineWhiteBlackScores = (whiteScore: number, blackScore: number): number =>

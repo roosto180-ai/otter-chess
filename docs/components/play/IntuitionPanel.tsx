@@ -7,13 +7,11 @@ import { getExpectedHumanTime, timeFormatToTc } from '@/lib/play/chess-utils';
 // Otter's auxiliary prediction head dashboard — moving piece, captured
 // piece, check probability, subjective eval, and the aux head's own
 // from/to square guess. Extracted out of AnalyzeSidebar (same reasoning as
-// ComparisonPanel) so /olympiad can reuse it.
+// ComparisonPanel).
 //
-// `analyzeTimeFormat`/`analyzeWhiteTime`/`analyzeBlackTime` are optional:
-// /play always has a time-format + clock to condition the "Est. Human
-// Think Time" stat on, but a live broadcast game has no such slider in
-// Phase 1 — omitting them just hides that one row rather than fabricating
-// a clock reading.
+// `analyzeTimeFormat`/`analyzeWhiteTime`/`analyzeBlackTime` are optional.
+// When all three are present, the panel shows an estimated human think
+// time; omitting them hides that row.
 export default function IntuitionPanel({
   game,
   topMoves,

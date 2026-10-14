@@ -6,9 +6,8 @@ import { formatUciAsSan, ARROW_BRUSH_COLORS } from '@/lib/play/chess-utils';
 
 // Otter-vs-Stockfish candidate move comparison, plus the arrow-colour
 // legend that explains the board arrows those two columns drive. Extracted
-// out of AnalyzeSidebar so /olympiad's main board can show the identical
-// panel without dragging along AnalyzeSidebar's /play-only chrome (Exit
-// button, guided Tour, rating-curve sweep, player clock).
+// out of AnalyzeSidebar so the comparison can render without AnalyzeSidebar's
+// play-only chrome (Exit button, guided Tour, rating-curve sweep, player clock).
 export default function ComparisonPanel({
   game,
   topMoves,

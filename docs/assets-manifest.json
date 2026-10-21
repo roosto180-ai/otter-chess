@@ -1,7 +1,20 @@
 {
   "upstreamCommit": "3e1e6c92f04010d3352be1625fe780f6f826aa06",
   "modelRevision": "eb8dc98b551d2b0744ba45e98fac23cf1af8c629",
+  "trainedModel": {
+    "release": "human-blitz-2026-10-22",
+    "selectedStep": 2500,
+    "safetensorsSha256": "23111e6878bc8786f3403ace6fa38a75ed10be41a7f0ce0c040b7695443f8365",
+    "report": "training/metrics.json",
+    "status": "experimental; superiority not established"
+  },
   "assets": [
+    {
+      "path": "model_blitz_fp16.onnx",
+      "url": "https://github.com/roosto180-ai/otter-chess/releases/download/human-blitz-2026-10-22/model_blitz_fp16.onnx",
+      "bytes": 30880661,
+      "sha256": "eba3f3b314dff949e6d2f5cb8736dfacf946a9eea3237b5581e0860e1eaf9d2d"
+    },
     {
       "path": "model_fp16.onnx",
       "url": "https://huggingface.co/peargentlabs/otter-chess/resolve/eb8dc98b551d2b0744ba45e98fac23cf1af8c629/model_fp16.onnx",

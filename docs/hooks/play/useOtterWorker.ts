@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { withBasePath } from '@/lib/site';
+import { activeModelAsset } from '@/lib/play/model-asset';
 
 // Owns the dedicated Otter inference worker (see public/otter-worker.js) —
 // spawning it, handing it the cached model, and the request/response
@@ -83,7 +84,7 @@ export function useOtterWorker(deps: {
       idToMoveRef.current = rev;
 
       // 2. Fetch cached model
-      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const cache = await caches.open(activeModelAsset().cacheKey);
       const response = await cache.match('/policy_model.onnx');
       if (!response) return;
 

@@ -76,6 +76,9 @@ class TrainConfig:
     save_checkpoints: bool = False
     max_train_games: Optional[int] = None
     max_val_games: Optional[int] = None
+    data_dir: Optional[str] = None
+    init_safetensors: Optional[str] = None
+    positions_per_game: Optional[int] = None
 
 
 # ════════════════════════════════════════════════════════════════
@@ -715,7 +718,9 @@ def train(cfg: TrainConfig) -> None:
 
     train_loader = create_data_loader(
         StreamConfig(
+            **({"data_dir": cfg.data_dir} if cfg.data_dir else {}),
             months=cfg.train_months,
+            positions_per_game=cfg.positions_per_game,
             history_k=cfg.history_k,
             batch_size=cfg.batch_size,
             num_workers=cfg.num_workers,
@@ -727,7 +732,9 @@ def train(cfg: TrainConfig) -> None:
     )
     val_loader = create_data_loader(
         StreamConfig(
+            **({"data_dir": cfg.data_dir} if cfg.data_dir else {}),
             months=cfg.val_months,
+            positions_per_game=cfg.positions_per_game,
             history_k=cfg.history_k,
             batch_size=cfg.batch_size,
             num_workers=cfg.num_workers,
@@ -739,6 +746,10 @@ def train(cfg: TrainConfig) -> None:
     )
 
     model = build_model(history_k=cfg.history_k).to(device)
+    if cfg.init_safetensors:
+        from safetensors.torch import load_file
+        model.load_state_dict(load_file(cfg.init_safetensors), strict=True)
+        print(f"Continuing official weights: {cfg.init_safetensors}", flush=True)
     print_model_summary(model)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
@@ -758,15 +769,22 @@ def train(cfg: TrainConfig) -> None:
     model.train()
     run_start = time.time()
     last_log_time = run_start
+    finished_step = start_step
+    trained_elo_counts = [0] * ELO_BUCKETS
+    trained_time_counts = [0] * TIME_CONTROL_BUCKETS
     for step, batch in enumerate(train_loader, start=1):
         global_step = start_step + step
         if global_step > cfg.train_steps:
             break
 
         batch = move_batch_to_device(batch, device)
+        for bucket in batch["active_elo_bucket"].tolist():
+            trained_elo_counts[bucket] += 1
+        for bucket in batch["time_control_bucket"].tolist():
+            trained_time_counts[bucket] += 1
         optimizer.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast("cuda", enabled=device.type == "cuda"):
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
             policy_logits, aux_logits, value_pred = model(
                 board=batch["board"],
                 history_ids=batch["history_ids"],
@@ -793,6 +811,7 @@ def train(cfg: TrainConfig) -> None:
         scaler.step(optimizer)
         scaler.update()
         scheduler.step()
+        finished_step = global_step
 
         acc = move_accuracy(policy_logits.detach(), batch["target_move_id"])
         loss_window.append(loss.item())
@@ -839,7 +858,6 @@ def train(cfg: TrainConfig) -> None:
             )
 
     # ── Final validation (skip if periodic val already ran at this step) ──
-    finished_step = start_step + step if 'step' in locals() else start_step
     already_validated = (cfg.val_interval > 0 and finished_step % cfg.val_interval == 0)
     if not already_validated:
         best_val_acc, val_metrics = run_and_log_val(
@@ -860,6 +878,8 @@ def train(cfg: TrainConfig) -> None:
     steps_completed = max(finished_step - start_step, 1)
     metrics_record = {
         "architecture": "policy_model",
+        "trained_elo_counts": trained_elo_counts,
+        "trained_time_counts": trained_time_counts,
         "train_steps_target": cfg.train_steps,
         "finished_step": finished_step,
         "train_loss": sum(loss_window) / max(len(loss_window), 1),
@@ -921,6 +941,8 @@ def parse_args() -> TrainConfig:
     parser.add_argument("--checkpoint", action="store_true", help="Save interval checkpoints during training. Final checkpoint is always saved.")
     parser.add_argument("--max-train-games", type=int, default=None)
     parser.add_argument("--max-val-games", type=int, default=None)
+    parser.add_argument("--data-dir", default=None)
+    parser.add_argument("--init-safetensors", default=None)
     args = parser.parse_args()
     return TrainConfig(
         train_months=args.train_months,
@@ -952,6 +974,8 @@ def parse_args() -> TrainConfig:
         save_checkpoints=args.checkpoint,
         max_train_games=args.max_train_games,
         max_val_games=args.max_val_games,
+        data_dir=args.data_dir,
+        init_safetensors=args.init_safetensors,
     )
 
 

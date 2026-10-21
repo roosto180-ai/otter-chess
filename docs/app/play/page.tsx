@@ -5,6 +5,8 @@ import { Chess } from 'chess.js';
 import { continuationPosition } from '@/lib/play/continuation';
 import { MatchClock } from '@/lib/play/match-clock';
 import MatchControls from '@/components/play/MatchControls';
+import ModelChoice from '@/components/play/ModelChoice';
+import { activeModelAsset } from '@/lib/play/model-asset';
 import { withBasePath } from '@/lib/site';
 import type { Square, Move } from 'chess.js';
 import { Chessground } from 'chessground';
@@ -375,7 +377,9 @@ export default function PlayPage() {
 
       // Check Cache Storage
       try {
-        const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+        const modelAsset = activeModelAsset();
+        if (modelAsset.id === 'trained') setTimeControl('180+0');
+        const cache = await caches.open(modelAsset.cacheKey);
         const modelRes = await cache.match('/policy_model.onnx');
         const sfRes = await cache.match('/stockfish.js');
         
@@ -1131,8 +1135,9 @@ export default function PlayPage() {
     setDownloadError(null);
     setModelProgress(0);
     try {
-      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
-      const res = await fetch(withBasePath('/model_fp16.onnx'));
+      const modelAsset = activeModelAsset();
+      const cache = await caches.open(modelAsset.cacheKey);
+      const res = await fetch(withBasePath(`/${modelAsset.path}`));
       if (!res.ok || !res.body) throw new Error("Model download failed: " + res.status);
 
       const contentLength = res.headers.get('content-length');
@@ -1151,7 +1156,7 @@ export default function PlayPage() {
 
       const blob = new Blob(chunks as BlobPart[]);
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
-      if (digest !== 'd9067fafb23f13f12eb92683ca412eda6e6b8ea3b09f3fb9b504404871014536') throw new Error('Model checksum mismatch');
+      if (digest !== modelAsset.sha256) throw new Error('Model checksum mismatch');
       const cacheResponse = new Response(blob, {
         headers: { 'content-type': 'application/octet-stream', 'content-length': blob.size.toString() }
       });
@@ -1174,7 +1179,7 @@ export default function PlayPage() {
     setDownloadError(null);
     setSfProgress(0);
     try {
-      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const cache = await caches.open(activeModelAsset().cacheKey);
       const res = await fetch(withBasePath('/vendor/stockfish.js'));
       if (!res.body) throw new Error("Null response body");
 
@@ -1247,6 +1252,7 @@ export default function PlayPage() {
     setModelPredMove(null);
     
     cleanChess.header('Site', window.location.host, 'Date', new Date().toISOString().slice(0,10).replaceAll('-', '.'), 'Round', '1', 'Event', 'Otter Chess Match', 'White', side === 'w' ? 'Guest' : `Otter AI (${playerElo})`, 'Black', side === 'b' ? 'Guest' : `Otter AI (${playerElo})`);
+    cleanChess.header('OtterModel', activeModelAsset().id, 'OtterModelHash', activeModelAsset().sha256);
     updateGameState(cleanChess);
     setIsConfigModalOpen(false);
     setIsMatchActive(true);
@@ -2748,6 +2754,7 @@ export default function PlayPage() {
           actions (Challenge / Analyze / Editor) on screen. min-h keeps it from
           being squeezed to nothing when the notation drawer is expanded. */}
       <div className="order-2 lg:order-3 border-t border-line lg:border-t-0 w-full lg:w-[400px] flex-1 min-h-[150px] lg:flex-none lg:min-h-0 flex flex-col bg-panel divide-y divide-line overflow-y-auto">
+        <ModelChoice lobby={!isMatchActive && !isAnalyzeMode && !isEditorMode} />
         
         {/* Move History / Lobby Middle Area */}
         {isAnalyzeMode ? (

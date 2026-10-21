@@ -1,0 +1,8 @@
+# Install a CUDA build of torch using pytorch.org's selector when training on NVIDIA.
+-r requirements.txt
+safetensors==0.8.0
+python-chess==1.999
+zstandard==0.25.0
+onnx==1.23.2
+onnxconverter-common==1.16.0
+onnxruntime==1.31.0

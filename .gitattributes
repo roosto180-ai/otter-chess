@@ -1,4 +1,6 @@
 # Keep checksum-verified assets byte-identical on Windows and Linux.
 docs/public/vendor/** -text
 docs/public/model_fp16.onnx -text
+docs/public/model_blitz_fp16.onnx -text
 docs/public/sources/*.zip -text
+*.sha256 text eol=lf

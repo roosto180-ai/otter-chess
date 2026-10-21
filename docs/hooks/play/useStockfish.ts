@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Chess } from 'chess.js';
+import { activeModelAsset } from '@/lib/play/model-asset';
 import type { Square } from 'chess.js';
 
 // Manages both Stockfish workers used by /play:
@@ -102,7 +103,7 @@ export function useStockfish(refs: {
 
   const initStockfishWorker = async () => {
     try {
-      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const cache = await caches.open(activeModelAsset().cacheKey);
       const response = await cache.match('/stockfish.js');
       if (!response) return;
 
@@ -193,7 +194,7 @@ export function useStockfish(refs: {
   const ensureBgStockfishWorker = async (): Promise<Worker | null> => {
     if (bgStockfishRef.current) return bgStockfishRef.current;
     try {
-      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const cache = await caches.open(activeModelAsset().cacheKey);
       const response = await cache.match('/stockfish.js');
       if (!response) return null;
       const blob = await response.blob();

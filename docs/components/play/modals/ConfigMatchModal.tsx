@@ -81,6 +81,7 @@ export default function ConfigMatchModal({
           >
             <option value={timeControl}>المحدد: {Number(timeControl.split("+")[0]) / 60}+{timeControl.split("+")[1]}</option>
             <option value="120+1">2+1</option>
+            <option value="180+0">3+0</option>
             <option value="300+0">5+0</option>
             <option value="300+3">5+3</option>
             <option value="1200+10">20+10</option>

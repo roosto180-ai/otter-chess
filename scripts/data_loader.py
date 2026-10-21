@@ -225,6 +225,7 @@ class StreamConfig:
     shuffle_files: bool = False
     shuffle_rows: bool = False
     seed: int = 1337
+    positions_per_game: Optional[int] = None
 
 
 # ── Dataset ──────────────────────────────────────────────────────
@@ -274,10 +275,18 @@ class OtterGameParquetStream(IterableDataset):
                     played_canonical_history: List[str] = []
                     move_clocks = (row.get("move_clocks") or "").split("|") if row.get("move_clocks") else []
                     moves_san = (row.get("moves_san") or "").split()
+                    selected = None
+                    if self.config.positions_per_game:
+                        rng = random.Random(f"{self.config.seed}:{row.get('source_id', row['moves_san'])}")
+                        selected = set(rng.sample(range(len(moves_san)), min(len(moves_san), self.config.positions_per_game)))
 
                     for ply_index, san_text in enumerate(moves_san):
                         original_turn = board.turn
-                        canonical_board = board if original_turn == fastchess.WHITE else board.mirror()
+                        if selected is not None and ply_index not in selected:
+                            raw_uci = board.push_san(san_text)
+                            played_canonical_history.append(canonicalize_move(raw_uci, original_turn))
+                            continue
+                        canonical_board = board.copy() if original_turn == fastchess.WHITE else board.mirror()
 
                         # --- Features extracted BEFORE pushing the move ---
                         board_tensor = board_to_tensor(board)

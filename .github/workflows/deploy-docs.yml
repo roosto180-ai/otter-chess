@@ -1,66 +1,66 @@
 name: Deploy docs site
-
 on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
-      - ".github/workflows/deploy-docs.yml"
-  # Allows a manual redeploy from the Actions tab.
+      - 'docs/**'
+      - 'otter-selfhost-source.zip'
+      - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
-
-# GITHUB_TOKEN needs to read the repo and mint a Pages deployment via OIDC.
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
-
-# Never let two deploys race; queue the newer one but let an in-flight
-# deployment finish rather than leaving Pages half-updated.
 concurrency:
   group: pages
   cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs
     steps:
       - uses: actions/checkout@v4
-
+      - name: Restore tested source bundle
+        run: |
+          echo 'd93df572d5fac4be688e5077bf574ac2b505d9f971457abb2c1e96f259ebdf48  otter-selfhost-source.zip' | sha256sum -c -
+          unzip -oq otter-selfhost-source.zip -d .
+          mkdir -p docs/public/sources
+          cp otter-selfhost-source.zip docs/public/sources/otter-selfhost-source.zip
+          rm -f docs/public/policy_model.onnx
+      - name: Keep adapted source available in the fork
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs .gitattributes COPYING INFERENCE-PARITY.json MODIFICATIONS.md README.md README-AR.md Start-Otter.ps1 TEST-REPORT-AR.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Materialize tested Otter clock and continuation source'
+            git push origin HEAD:main
+          fi
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: docs/package-lock.json
-
       - name: Install dependencies
+        working-directory: docs
         run: npm ci
-
+      - name: Test clocks and continuation
+        working-directory: docs
+        run: npm test
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-
-      # The site is a project page at https://<owner>.github.io/<repo>, so
-      # everything has to be prefixed with /<repo>. next.config.ts and
-      # lib/site.ts read these; both are inlined into the client bundle.
-      - name: Build static export
+      - name: Build static export with verified original model
+        working-directory: docs
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
           NEXT_PUBLIC_SITE_URL: ${{ steps.pages.outputs.base_url }}
+          NEXT_TELEMETRY_DISABLED: '1'
         run: npm run build
-
-      # Belt and braces: the Actions deploy path doesn't run Jekyll, but if it
-      # ever did it would strip the underscore-prefixed `_next/` directory.
       - name: Disable Jekyll
-        run: touch out/.nojekyll
-
+        run: touch docs/out/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/out
-
   deploy:
     needs: build
     runs-on: ubuntu-latest

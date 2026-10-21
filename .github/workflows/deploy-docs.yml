@@ -21,21 +21,28 @@ jobs:
       - uses: actions/checkout@v4
       - name: Restore tested source bundle
         id: restore
-        if: hashFiles('docs/lib/play/match-clock.ts') == ''
         run: |
-          echo 'd93df572d5fac4be688e5077bf574ac2b505d9f971457abb2c1e96f259ebdf48  otter-selfhost-source.zip' | sha256sum -c -
-          unzip -oq otter-selfhost-source.zip -d .
-          mkdir -p docs/public/sources
-          cp otter-selfhost-source.zip docs/public/sources/otter-selfhost-source.zip
-          rm -f docs/public/policy_model.onnx
+          if [ -f otter-selfhost-source.zip ] && [ -f otter-selfhost-source.sha256 ]; then
+            if ! cmp -s otter-selfhost-source.sha256 .github/materialized-source.sha256; then
+              sha256sum -c otter-selfhost-source.sha256
+              unzip -oq otter-selfhost-source.zip -d .
+              mkdir -p docs/public/sources
+              cp otter-selfhost-source.zip docs/public/sources/otter-selfhost-source.zip
+              cp otter-selfhost-source.sha256 .github/materialized-source.sha256
+              echo 'changed=true' >> "$GITHUB_OUTPUT"
+            fi
+          elif [ ! -f docs/lib/play/model-asset.ts ]; then
+            echo 'Missing adapted source and verified source bundle' >&2
+            exit 1
+          fi
       - name: Keep adapted source available in the fork
-        if: steps.restore.outcome == 'success'
+        if: steps.restore.outputs.changed == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs .gitattributes COPYING INFERENCE-PARITY.json MODIFICATIONS.md README.md README-AR.md Start-Otter.ps1 TEST-REPORT-AR.md
+          git add docs scripts .github/materialized-source.sha256 .gitattributes COPYING INFERENCE-PARITY.json MODIFICATIONS.md README.md README-AR.md Start-Otter.ps1 TEST-REPORT-AR.md FINETUNING-AR.md
           if ! git diff --cached --quiet; then
-            git commit -m 'Materialize tested Otter clock and continuation source'
+            git commit -m 'Materialize tested Otter training and model-selection source'
             git push origin HEAD:main
           fi
       - uses: actions/setup-node@v4
@@ -46,13 +53,13 @@ jobs:
       - name: Install dependencies
         working-directory: docs
         run: npm ci
-      - name: Test clocks and continuation
+      - name: Test clocks, continuation and model-cache isolation
         working-directory: docs
         run: npm test
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
-      - name: Build static export with verified original model
+      - name: Build static export with verified original and trained models
         working-directory: docs
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
@@ -73,4 +80,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-

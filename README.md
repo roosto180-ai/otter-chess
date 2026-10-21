@@ -1,3 +1,5 @@
+> Independent self-hosted adaptation with editable clocks and continuation analysis. See [Arabic run/deployment guide](README-AR.md). Based on upstream commit 3e1e6c92f04010d3352be1625fe780f6f826aa06. Web adaptation: GPL-3.0-or-later; original Otter code and weights: MIT.
+
 ![Otter](docs/public/real-ooter-banner.png)
 
 Otter is a skill-conditioned chess move prediction model. It predicts what move a player of a given Elo rating would make in a position, conditioned on game history, time control, and the remaining clock time.

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "runModelInference",
+    "unchanged": true,
+    "sha256": "2e00637477dc0d1d9369dee31b8c9dd564b98864b4fe263555f25281e248b4de"
+  },
+  {
+    "name": "runModelInferenceAtElo",
+    "unchanged": true,
+    "sha256": "e7f65ab59d537efe25450fd5049533929db76d862ee706f77f43d6b61678514e"
+  },
+  {
+    "name": "resolveEloAndClock",
+    "unchanged": true,
+    "sha256": "f56d0473372a510bb8e88b3ed6ac3402c41104dcd19f3b7dc691c9d9ecee642a"
+  }
+]

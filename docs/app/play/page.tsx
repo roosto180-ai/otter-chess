@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Chess } from 'chess.js';
+import { continuationPosition } from '@/lib/play/continuation';
+import { MatchClock } from '@/lib/play/match-clock';
+import MatchControls from '@/components/play/MatchControls';
+import { withBasePath } from '@/lib/site';
 import type { Square, Move } from 'chess.js';
 import { Chessground } from 'chessground';
 import { Api } from 'chessground/api';
@@ -120,6 +124,56 @@ export default function PlayPage() {
   const [clockFraction, setClockFraction] = useState<number>(50); // percentage
   const [playerTime, setPlayerTime] = useState<number>(600);
   const [otterTime, setOtterTime] = useState<number>(600);
+
+  const clockRef = useRef(new MatchClock());
+  const endedRef = useRef(false);
+  const continueRef = useRef(false);
+  const generationRef = useRef(0);
+  const recordedRef = useRef(false);
+  const [ended, setEnded] = useState(false);
+  const [continueMode, setContinueMode] = useState(false);
+  const [matchRevision, setMatchRevision] = useState(0);
+  const [clockNotice, setClockNotice] = useState('');
+  function syncClock() {
+    setPlayerTime(clockRef.current.player);
+    setOtterTime(clockRef.current.otter);
+  }
+  function cancelPendingMove() {
+    generationRef.current++;
+    setIsThinking(false);
+    setPendingPromotion(null);
+    setMatchRevision(v => v + 1);
+  }
+  function flag(side: 'player' | 'otter') {
+    if (continueRef.current) return;
+    setGameStatus(side === 'player' ? "Time's up — you lost on time." : "Time's up — Otter lost on time.");
+    recordMatch(side === 'player' ? 'loss' : 'win');
+  }
+  function editClock(side: 'player' | 'otter', seconds: number) {
+    const expired = clockRef.current.edit(side, seconds, performance.now());
+    syncClock();
+    cancelPendingMove();
+    if (expired) flag(expired);
+    if (!endedRef.current && !continueRef.current && clockRef.current[clockRef.current.side] === 0) flag(clockRef.current.side);
+    setClockNotice('تم تعديل الساعة. إذا انتهت المباراة، اضغط متابعة لبدء فرع تحليلي.');
+  }
+  function continueMatch() {
+    if (!game) return;
+    cancelPendingMove();
+    let c: Chess;
+    try { c = continuationPosition(game, playerColor).game; }
+    catch { setClockNotice('لا توجد نقلة قانونية أو نقلة سابقة للتراجع عنها.'); return; }
+    endedRef.current = false;
+    continueRef.current = true;
+    setEnded(false);
+    setContinueMode(true);
+    clockRef.current.running = false; // analysis keeps conditioning clocks fixed, including zero
+    c.header('Result', '*', 'Event', 'Otter continuation analysis');
+    setGame(c);
+    gameRef.current = c;
+    updateGameState(c);
+    setClockNotice('وضع متابعة تحليلي — الساعات ثابتة وقابلة للتعديل؛ نفس النموذج والتصنيف وسجل النقلات.');
+  }
 
   // Model Loading & Execution State
   const [showSetupModal, setShowSetupModal] = useState<boolean>(false);
@@ -321,7 +375,7 @@ export default function PlayPage() {
 
       // Check Cache Storage
       try {
-        const cache = await caches.open('otter-model-cache');
+        const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
         const modelRes = await cache.match('/policy_model.onnx');
         const sfRes = await cache.match('/stockfish.js');
         
@@ -374,11 +428,12 @@ export default function PlayPage() {
 
   // 3. Automated Otter Game Loop
   useEffect(() => {
-    if (!isMatchActive || !game || !modelLoaded || isThinking) return;
+    if (!isMatchActive || endedRef.current || !game || !modelLoaded || isThinking || game.moves().length === 0) return;
 
     const turn = game.turn();
     if (turn !== playerColor) {
       const fenAtStart = game.fen();
+      const generation = generationRef.current;
 
       const runOtterTurn = async () => {
         setIsThinking(true);
@@ -390,8 +445,8 @@ export default function PlayPage() {
           // takeback, or the match ending via resign/draw. Applying Otter's
           // move to a position it was never computed for would corrupt the
           // game, so bail out instead.
-          if (gameRef.current?.fen() !== fenAtStart) {
-            setIsThinking(false);
+          if (generation !== generationRef.current || endedRef.current || gameRef.current?.fen() !== fenAtStart) {
+            if (generation === generationRef.current) setIsThinking(false);
             return;
           }
 
@@ -415,23 +470,23 @@ export default function PlayPage() {
             setTimeout(() => {
               // Re-check right before applying too — the position could have
               // changed during the thinking delay itself.
-              if (gameRef.current?.fen() === fenAtStart) {
+              if (generation === generationRef.current && !endedRef.current && gameRef.current?.fen() === fenAtStart) {
                 playModelMove(bestMove);
               }
-              setIsThinking(false);
+              if (generation === generationRef.current) setIsThinking(false);
             }, thinkingDelay);
           } else {
-            setIsThinking(false);
+            if (generation === generationRef.current) setIsThinking(false);
           }
         } catch (e) {
           console.error("Otter move generation failed:", e);
-          setIsThinking(false);
+          if (generation === generationRef.current) setIsThinking(false);
         }
       };
 
       runOtterTurn();
     }
-  }, [historyMoves, isMatchActive, modelLoaded, playerColor, thinkingMode, otterTime, timeControl]);
+  }, [historyMoves, isMatchActive, modelLoaded, playerColor, thinkingMode, timeControl, ended, continueMode, matchRevision]);
 
   // Re-run inference when Elo, time control, or clock fraction changes
   useEffect(() => {
@@ -490,45 +545,18 @@ export default function PlayPage() {
     return () => clearTimeout(t);
   }, [isAnalyzeMode]);
 
-  // Real-time ticking clock loop. Reads gameRef instead of closing over
-  // `game` directly (and doesn't list `game` as a dependency), so the
-  // interval runs continuously for the whole match instead of tearing down
-  // and rebuilding on every move — which used to reset setInterval's 1s
-  // phase each time, losing up to ~1s of ticking after every move and
-  // making the displayed clock drift slower than real elapsed time.
+  // Charge actual elapsed time, including background-tab throttling, before every move/edit.
   useEffect(() => {
-    if (!isMatchActive) return;
-
-    const interval = setInterval(() => {
-      const currentGame = gameRef.current;
-      if (!currentGame || currentGame.isGameOver()) return;
-
-      const turn = currentGame.turn();
-      if (turn === playerColor) {
-        setPlayerTime(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setGameStatus("Time's up — you lost on time.");
-            setTimeout(() => recordMatch('loss'), 1800);
-            return 0;
-          }
-          return prev - 1;
-        });
-      } else {
-        setOtterTime(prev => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            setGameStatus("Time's up — Otter lost on time.");
-            setTimeout(() => recordMatch('win'), 1800);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [isMatchActive, playerColor]);
+    if (!isMatchActive || ended || continueMode) return;
+    const tick = () => {
+      const expired = clockRef.current.settle(performance.now());
+      syncClock();
+      if (expired) flag(expired);
+    };
+    const interval = setInterval(tick, 100);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
+  }, [isMatchActive, ended, continueMode, playerColor]);
 
   // Helper to parse destinations for Chessground
   const getDests = (c: Chess): Map<Key, Key[]> => {
@@ -581,6 +609,12 @@ export default function PlayPage() {
 
   const applyMove = (orig: string, dest: string, promotionPiece: 'q' | 'r' | 'b' | 'n' | undefined) => {
     if (!game) return;
+    if (isMatchActive) {
+      const expired = clockRef.current.settle(performance.now());
+      syncClock();
+      if (expired) flag(expired);
+      if (endedRef.current || game.turn() !== playerColor) { cgRef.current?.set({ fen: game.fen() }); return; }
+    }
 
     const isLobbyOrAnalysis = !isMatchActive;
     if (isLobbyOrAnalysis) {
@@ -919,7 +953,7 @@ export default function PlayPage() {
             ? (isEditorMode 
                 ? (isFreeform ? undefined : getDests(game)) 
                 : (isMatchActive 
-                    ? (game.turn() === playerColor ? getDests(game) : new Map()) 
+                    ? (!ended && game.turn() === playerColor ? getDests(game) : new Map()) 
                     : getDests(game)))
             : new Map(),
         },
@@ -1064,7 +1098,7 @@ export default function PlayPage() {
             ? (isEditorMode 
                 ? (isFreeform ? undefined : getDests(game)) 
                 : (isMatchActive 
-                    ? (game.turn() === playerColor ? getDests(game) : new Map()) 
+                    ? (!ended && game.turn() === playerColor ? getDests(game) : new Map()) 
                     : getDests(game)))
             : new Map(),
         },
@@ -1073,7 +1107,7 @@ export default function PlayPage() {
         }
       });
     }
-  }, [historyMoves, isFlipped, playerColor, topMoves, sfTopMoves, analysisMoves, currentMoveIdx, branchViewIdx, isMatchActive, isAnalyzeMode, isEditorMode, isFreeform, game, liveFenInput, editorSelectedPiece, editorMoveSource]);
+  }, [historyMoves, isFlipped, playerColor, topMoves, sfTopMoves, analysisMoves, currentMoveIdx, branchViewIdx, isMatchActive, isAnalyzeMode, isEditorMode, isFreeform, game, liveFenInput, editorSelectedPiece, editorMoveSource, ended]);
 
   // Check if both engines are fully ready
   const enginesReady = modelAvailable && stockfishAvailable;
@@ -1097,9 +1131,9 @@ export default function PlayPage() {
     setDownloadError(null);
     setModelProgress(0);
     try {
-      const cache = await caches.open('otter-model-cache');
-      const res = await fetch('https://huggingface.co/peargentlabs/otter-chess/resolve/main/model_fp16.onnx');
-      if (!res.body) throw new Error("Null response body");
+      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const res = await fetch(withBasePath('/model_fp16.onnx'));
+      if (!res.ok || !res.body) throw new Error("Model download failed: " + res.status);
 
       const contentLength = res.headers.get('content-length');
       const total = contentLength ? parseInt(contentLength, 10) : 31 * 1024 * 1024;
@@ -1116,6 +1150,8 @@ export default function PlayPage() {
       }
 
       const blob = new Blob(chunks as BlobPart[]);
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))).map(b => b.toString(16).padStart(2, '0')).join('');
+      if (digest !== 'd9067fafb23f13f12eb92683ca412eda6e6b8ea3b09f3fb9b504404871014536') throw new Error('Model checksum mismatch');
       const cacheResponse = new Response(blob, {
         headers: { 'content-type': 'application/octet-stream', 'content-length': blob.size.toString() }
       });
@@ -1138,8 +1174,8 @@ export default function PlayPage() {
     setDownloadError(null);
     setSfProgress(0);
     try {
-      const cache = await caches.open('otter-model-cache');
-      const res = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
+      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
+      const res = await fetch(withBasePath('/vendor/stockfish.js'));
       if (!res.body) throw new Error("Null response body");
 
       const contentLength = res.headers.get('content-length');
@@ -1184,11 +1220,19 @@ export default function PlayPage() {
     setIsFlipped(side === 'b');
 
     const baseSec = getBaseSeconds(timeControl);
-    setPlayerTime(baseSec);
-    setOtterTime(baseSec);
+    cancelPendingMove();
+    endedRef.current = false;
+    continueRef.current = false;
+    recordedRef.current = false;
+    setEnded(false);
+    setContinueMode(false);
+    setClockNotice('');
+    clockRef.current.start(baseSec, getIncrementSeconds(timeControl), side === 'w' ? 'player' : 'otter', performance.now());
+    syncClock();
     
     // Reset game state
     const cleanChess = new Chess();
+    gameRef.current = cleanChess;
     setGame(cleanChess);
     setHistoryMoves([]);
     setHistoryMovesSan([]);
@@ -1202,6 +1246,7 @@ export default function PlayPage() {
     setAuxFromTo("-");
     setModelPredMove(null);
     
+    cleanChess.header('Site', window.location.host, 'Date', new Date().toISOString().slice(0,10).replaceAll('-', '.'), 'Round', '1', 'Event', 'Otter Chess Match', 'White', side === 'w' ? 'Guest' : `Otter AI (${playerElo})`, 'Black', side === 'b' ? 'Guest' : `Otter AI (${playerElo})`);
     updateGameState(cleanChess);
     setIsConfigModalOpen(false);
     setIsMatchActive(true);
@@ -1219,6 +1264,7 @@ export default function PlayPage() {
   // Resign match
   const resignMatch = () => {
     setShowResignConfirm(false);
+    setGameStatus('انتهى اللعب بالاستسلام — يمكنك فتح فرع متابعة.');
     recordMatch('loss');
   };
 
@@ -1319,6 +1365,7 @@ export default function PlayPage() {
   };
 
   const offerDraw = () => {
+    if (endedRef.current) return;
     // Otter won't consider a draw before move 15 (30 plies).
     if (historyMoves.length < 30) {
       setDrawDeclined(true);
@@ -1329,6 +1376,7 @@ export default function PlayPage() {
     // losing. Reject if Otter is clearly winning (or anything in between).
     const accepts = Math.abs(otterEval) < 0.2 || otterEval <= -0.4;
     if (accepts) {
+      setGameStatus('انتهى اللقاء بالتعادل بالاتفاق.');
       recordMatch('draw');
     } else {
       setDrawDeclined(true);
@@ -1336,7 +1384,11 @@ export default function PlayPage() {
   };
 
   const takeback = () => {
-    if (!game || historyMoves.length === 0) return;
+    if (!game || historyMoves.length === 0 || endedRef.current) return;
+    const expired = clockRef.current.settle(performance.now());
+    syncClock();
+    if (expired) { flag(expired); return; }
+    cancelPendingMove();
     // "Take back" always means undo the PLAYER's last move. If Otter has
     // already replied (it's the player's turn again), that reply needs
     // undoing too so the player lands back at their own turn to reconsider
@@ -1356,6 +1408,9 @@ export default function PlayPage() {
     // `new Chess(game.fen())`, so the move list reflects the remaining
     // moves after the takeback instead of resetting to empty.
     const newGame = cloneGameWithHistory(game);
+    clockRef.current.settle(performance.now());
+    clockRef.current.side = newGame.turn() === playerColor ? "player" : "otter";
+    gameRef.current = newGame;
     setGame(newGame);
     updateGameState(newGame);
     if (cgRef.current) {
@@ -1365,6 +1420,16 @@ export default function PlayPage() {
 
   // Record completed match in history
   function recordMatch(result: 'win' | 'loss' | 'draw') {
+    const game = gameRef.current;
+    if (endedRef.current) return;
+    endedRef.current = true;
+    setEnded(true);
+    clockRef.current.settle(performance.now());
+    clockRef.current.running = false;
+    syncClock();
+    cancelPendingMove();
+    if (continueRef.current || recordedRef.current) return;
+    recordedRef.current = true;
     // Clear top predictions
     setTopMoves([]);
 
@@ -1424,7 +1489,7 @@ export default function PlayPage() {
       timeControl: timeControl,
       playerColor: playerColor,
       result: result,
-      movesCount: historyMoves.length,
+      movesCount: game?.history().length || 0,
       pgn: game?.pgn() || ''
     };
 
@@ -1432,8 +1497,7 @@ export default function PlayPage() {
     setMatchHistory(newHistory);
     localStorage.setItem('otter-match-history', JSON.stringify(newHistory));
     
-    setIsMatchActive(false);
-    resetBoard();
+    // Keep the final position and full history visible until the user chooses a continuation or new game.
   }
 
   const handleFenInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1851,6 +1915,13 @@ export default function PlayPage() {
 
   // Update board grid and game status
   function updateGameState(c: Chess) {
+    const previous = gameRef.current;
+    if (isMatchActive && !endedRef.current && previous && c.history().length === previous.history().length + 1) {
+      const expired = clockRef.current.move(c.turn() === playerColor ? 'player' : 'otter', performance.now(), continueRef.current);
+      syncClock();
+      if (expired) { setGame(previous); flag(expired); return; }
+    }
+    gameRef.current = c;
     setBoard(c.board() as (Piece | null)[][]);
     const verboseHistory = c.history({ verbose: true });
     const moves = verboseHistory.map(m => m.from + m.to + (m.promotion || ''));
@@ -1869,10 +1940,10 @@ export default function PlayPage() {
         'Round', '1',
         'White', playerColor === 'w' ? 'Guest' : `Otter AI (${playerElo})`,
         'Black', playerColor === 'b' ? 'Guest' : `Otter AI (${playerElo})`,
-        'Result', c.isGameOver() ? (c.isCheckmate() ? (c.turn() === 'w' ? '0-1' : '1-0') : '1/2-1/2') : '*'
+        'Result', (!continueRef.current && c.isGameOver()) ? (c.isCheckmate() ? (c.turn() === 'w' ? '0-1' : '1-0') : '1/2-1/2') : '*'
       );
     } else {
-      const expectedResult = c.isGameOver() ? (c.isCheckmate() ? (c.turn() === 'w' ? '0-1' : '1-0') : '1/2-1/2') : '*';
+      const expectedResult = (!continueRef.current && c.isGameOver()) ? (c.isCheckmate() ? (c.turn() === 'w' ? '0-1' : '1-0') : '1/2-1/2') : '*';
       if (currentHeaders.Result !== expectedResult) {
         c.header('Result', expectedResult);
       }
@@ -1902,7 +1973,7 @@ export default function PlayPage() {
     
     // Calculate highlights on checkmate
     const endOfGameShapes: DrawShape[] = [];
-    if (c.isCheckmate() || c.isDraw()) {
+    if (c.isCheckmate() || (c.isDraw() && !continueRef.current)) {
       setTopMoves([]); // Clear predictions upon game end
 
       if (c.isCheckmate()) {
@@ -1944,14 +2015,14 @@ export default function PlayPage() {
     if (c.isCheckmate()) {
       const winnerColor = c.turn() === 'w' ? 'b' : 'w';
       setGameStatus(`Checkmate! ${winnerColor === 'w' ? 'White' : 'Black'} wins.`);
-      if (isMatchActive && !isAnalyzeMode) {
+      if (isMatchActive && !isAnalyzeMode && !continueRef.current) {
         const outcome = winnerColor === playerColor ? 'win' : 'loss';
-        setTimeout(() => recordMatch(outcome), 2500);
+        recordMatch(outcome);
       }
     } else if (c.isDraw()) {
       setGameStatus("Game Over - Draw.");
-      if (isMatchActive && !isAnalyzeMode) {
-        setTimeout(() => recordMatch('draw'), 2500);
+      if (isMatchActive && !isAnalyzeMode && !continueRef.current) {
+        recordMatch('draw');
       }
     } else if (c.inCheck()) {
       setGameStatus(`Check! ${c.turn() === 'w' ? "White" : "Black"}'s turn.`);
@@ -2445,7 +2516,10 @@ export default function PlayPage() {
 
   // Handle board square click
   const handleSquareClick = (square: string) => {
-    if (!game || !isMatchActive || isThinking) return;
+    if (!game || !isMatchActive || endedRef.current || isThinking) return;
+    const expired = clockRef.current.settle(performance.now());
+    syncClock();
+    if (expired) { flag(expired); return; }
     if (game.turn() !== playerColor) return;
 
     // Check if player is clicking their own piece
@@ -2494,7 +2568,10 @@ export default function PlayPage() {
 
   // Make Otter play its top predicted move automatically
   function playModelMove(moveUci: string) {
-    if (!game || !modelLoaded) return;
+    if (!game || !modelLoaded || endedRef.current) return;
+    const expired = clockRef.current.settle(performance.now());
+    syncClock();
+    if (expired) { flag(expired); return; }
     const currentHistory = [...historyMoves];
     let moveObj: Move | null = null;
     let newGame: Chess | null = null;
@@ -2793,6 +2870,17 @@ export default function PlayPage() {
             loadGameForAnalysis={loadGameForAnalysis}
           />
         ) : (
+          <>
+          <MatchControls
+            ended={ended} continueMode={continueMode} notice={clockNotice}
+            noLegalMoves={game?.moves().length === 0} playerTime={playerTime} otterTime={otterTime}
+            editClock={editClock} onContinue={continueMatch}
+            onExport={() => setShowFenPgnModal(true)}
+            onNewGame={() => {
+              cancelPendingMove(); clockRef.current.running = false;
+              endedRef.current = false; continueRef.current = false;
+              setEnded(false); setContinueMode(false); setIsMatchActive(false); resetBoard();
+            }} />
           <ActiveMatchSidebar
             isThinking={isThinking}
             gameStatus={gameStatus}
@@ -2800,8 +2888,9 @@ export default function PlayPage() {
             historyMoves={historyMoves}
             takeback={takeback}
             offerDraw={offerDraw}
-            onResignClick={() => setShowResignConfirm(true)}
+            onResignClick={() => { if (!endedRef.current) setShowResignConfirm(true); }}
           />
+          </>
         )}
 
       </div>

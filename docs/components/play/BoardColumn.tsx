@@ -128,8 +128,8 @@ export default function BoardColumn({
             : 'border-line bg-bg/50 text-paper/85'
         }`}>
           {(() => {
-            const m = Math.floor(card.time / 60);
-            const s = card.time % 60;
+            const m = Math.floor(Math.ceil(card.time) / 60);
+            const s = Math.ceil(card.time) % 60;
             return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
           })()}
         </div>

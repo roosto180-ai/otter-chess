@@ -102,7 +102,7 @@ export function useStockfish(refs: {
 
   const initStockfishWorker = async () => {
     try {
-      const cache = await caches.open('otter-model-cache');
+      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
       const response = await cache.match('/stockfish.js');
       if (!response) return;
 
@@ -193,7 +193,7 @@ export function useStockfish(refs: {
   const ensureBgStockfishWorker = async (): Promise<Worker | null> => {
     if (bgStockfishRef.current) return bgStockfishRef.current;
     try {
-      const cache = await caches.open('otter-model-cache');
+      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
       const response = await cache.match('/stockfish.js');
       if (!response) return null;
       const blob = await response.blob();

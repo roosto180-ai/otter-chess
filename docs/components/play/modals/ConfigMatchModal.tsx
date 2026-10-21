@@ -1,4 +1,6 @@
 'use client';
+import { useState } from 'react';
+import { customTimeControl } from '@/lib/play/match-clock';
 
 export default function ConfigMatchModal({
   playerElo,
@@ -25,6 +27,16 @@ export default function ConfigMatchModal({
   onCancel: () => void;
   startMatch: () => void;
 }) {
+  const [customMinutes, setCustomMinutes] = useState('10');
+  const [customIncrement, setCustomIncrement] = useState('0');
+  const [customError, setCustomError] = useState('');
+  function applyCustom() {
+    try {
+      if (!customMinutes.trim() || !customIncrement.trim()) throw new Error('empty');
+      setTimeControl(customTimeControl(Number(customMinutes), Number(customIncrement)));
+      setCustomError('');
+    } catch { setCustomError('الدقائق بين 0.1 و1440، والزيادة عدد صحيح بين 0 و600 ثانية.'); }
+  }
   return (
     <div className="fixed inset-0 p-4 flex items-center justify-center bg-paper/25 backdrop-blur-sm z-50 transition-opacity">
       <div className="w-full max-w-md max-h-[calc(100dvh-32px)] overflow-y-auto p-6 sm:p-8 bg-panel border border-[#7a856f]/55 space-y-6 shadow-2xl relative text-paper rounded-[4px]">
@@ -67,12 +79,24 @@ export default function ConfigMatchModal({
             onChange={(e) => setTimeControl(e.target.value)}
             className="w-full px-3 py-2.5 bg-bg border border-[#7a856f]/55 text-xs text-paper focus:outline-none focus:border-pear font-semibold font-mono rounded-[3px]"
           >
+            <option value={timeControl}>المحدد: {Number(timeControl.split("+")[0]) / 60}+{timeControl.split("+")[1]}</option>
+            <option value="120+1">2+1</option>
+            <option value="300+0">5+0</option>
+            <option value="300+3">5+3</option>
+            <option value="1200+10">20+10</option>
+            <option value="3600+30">60+30</option>
             <option value="60+0">Bullet (1+0)</option>
             <option value="180+2">Blitz (3+2)</option>
             <option value="600+0">Rapid (10+0)</option>
             <option value="900+10">Rapid (15+10)</option>
             <option value="1800+0">Classical (30+0)</option>
           </select>
+          <div dir="rtl" className="text-xs space-y-2">
+            <label>دقائق مخصصة <input aria-label="دقائق مخصصة" className="w-20 bg-bg border p-1" type="number" min="0.1" max="1440" step="0.1" value={customMinutes} onChange={e => setCustomMinutes(e.target.value)} /></label>
+            <label> زيادة بالثواني <input aria-label="زيادة بالثواني" className="w-16 bg-bg border p-1" type="number" min="0" max="600" value={customIncrement} onChange={e => setCustomIncrement(e.target.value)} /></label>
+            <button className="border p-2 cursor-pointer" onClick={applyCustom}>تطبيق الوقت المخصص</button>
+            <p role="alert">{customError}</p>
+          </div>
         </div>
 
         {/* Thinking Speed */}

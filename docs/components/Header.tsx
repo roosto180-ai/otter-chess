@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { withBasePath } from '@/lib/site';
 import { usePathname } from 'next/navigation';
 
 export default function Header() {
@@ -18,10 +19,11 @@ export default function Header() {
           Otter
         </Link>
         <span className="hidden sm:inline font-mono text-[11px] text-muted tracking-[0.05em] border-l border-line ml-1.5 pl-2.5">
-          PeargentLabs
+          Otter · نسخة مستقلة
         </span>
       </div>
 
+      <a className="text-xs text-muted" href={withBasePath("/licenses/")}>المصدر والترخيص</a>
       {/* Navigation Links */}
       <nav aria-label="Main" className="flex items-center gap-[18px] sm:gap-[36px]">
         <Link

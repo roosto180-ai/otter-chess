@@ -6,7 +6,7 @@
 // how fast this worker can keep up; if the player moves faster than the
 // model can answer, stale requests are simply dropped, not waited on.
 
-importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js');
+importScripts(new URL('./vendor/ort.min.js', self.location.href).href);
 
 let session = null;
 
@@ -147,7 +147,7 @@ self.onmessage = async (ev) => {
   const msg = ev.data;
   if (msg.type === 'init') {
     try {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/';
+      ort.env.wasm.wasmPaths = new URL('./vendor/', self.location.href).href;
       const sessionOptions = {
         executionProviders: msg.provider === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
         // 'extended' and up run a fp16 precision-free-cast insertion pass

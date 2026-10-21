@@ -83,7 +83,7 @@ export function useOtterWorker(deps: {
       idToMoveRef.current = rev;
 
       // 2. Fetch cached model
-      const cache = await caches.open('otter-model-cache');
+      const cache = await caches.open('otter-selfhost-fp16-d9067faf-v1');
       const response = await cache.match('/policy_model.onnx');
       if (!response) return;
 

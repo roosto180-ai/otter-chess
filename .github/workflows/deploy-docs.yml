@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore tested source bundle
+        id: restore
+        if: hashFiles('docs/lib/play/match-clock.ts') == ''
         run: |
           echo 'd93df572d5fac4be688e5077bf574ac2b505d9f971457abb2c1e96f259ebdf48  otter-selfhost-source.zip' | sha256sum -c -
           unzip -oq otter-selfhost-source.zip -d .
@@ -27,6 +29,7 @@ jobs:
           cp otter-selfhost-source.zip docs/public/sources/otter-selfhost-source.zip
           rm -f docs/public/policy_model.onnx
       - name: Keep adapted source available in the fork
+        if: steps.restore.outcome == 'success'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -70,3 +73,4 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
